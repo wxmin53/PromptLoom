@@ -1,11 +1,13 @@
 import { useRef, useState, useEffect } from 'react'
 import type { Draft } from './types'
 import { useAppState } from './hooks/useAppState'
+import { useModules } from './hooks/useModules'
 import { autoSaveDraft, manualSaveDraft } from './hooks/useDrafts'
 import {
   fetchClarificationQuestions,
-  fetchGeneratedPrompt,
+  streamGeneratedPrompt,
   fetchTunedPrompt,
+  fetchToolRecommendations,
 } from './hooks/useClaudeAPI'
 import {
   getClarificationSystemPrompt,
@@ -14,9 +16,10 @@ import {
   getGenerationUserPrompt,
   getTuningSystemPrompt,
   getTuningUserPrompt,
+  getToolRecommendationSystemPrompt,
+  getToolRecommendationUserPrompt,
 } from './constants/prompts'
 import { ALGORITHM_TOOLS } from './constants/tools'
-import { PROMPT_MODULES } from './constants/modules'
 import { scrollToRef } from './utils/scroll'
 import Header from './components/Header'
 import PathSelector from './components/PathSelector'
@@ -41,11 +44,13 @@ function Toast({ message, onDismiss }: { message: string; onDismiss: () => void 
 
 export default function App() {
   const { state, dispatch, inputsChangedSinceLastGeneration, getClarificationQA } = useAppState()
+  const { modules, addModule, updateModule, deleteModule } = useModules()
 
   const clarificationRef = useRef<HTMLDivElement>(null)
   const resultRef = useRef<HTMLDivElement>(null)
   const clarificationScrolled = useRef(false)
   const resultScrolled = useRef(false)
+  const prevIsResultLoading = useRef(false)
 
   const [toastMessage, setToastMessage] = useState('')
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -53,6 +58,21 @@ export default function App() {
   const apiKeyMissing = false // API Key 由代理服务器管理，前端无需检查
 
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current) }, [])
+
+  useEffect(() => {
+    if (prevIsResultLoading.current && !state.isResultLoading && state.result && !state.resultError) {
+      autoSaveDraft({
+        generationType: state.generationType,
+        requirementInput: state.requirementInput,
+        templateInput: state.templateInput,
+        selectedToolIds: state.selectedToolIds,
+        selectedModuleIds: state.selectedModuleIds,
+        clarificationQA: getClarificationQA(),
+        result: state.result,
+      })
+    }
+    prevIsResultLoading.current = state.isResultLoading
+  }, [state.isResultLoading])
 
   function showToast(msg: string) {
     setToastMessage(msg)
@@ -73,8 +93,12 @@ export default function App() {
   }
 
   function handleApiError(err: unknown) {
-    if (err instanceof Error && err.message === 'API_KEY_INVALID') {
-      showToast('API Key 无效，请检查配置')
+    if (err instanceof Error) {
+      if (err.message === 'API_KEY_INVALID') {
+        showToast('API Key 无效，请检查配置')
+      } else if (err.message === 'API_TIMEOUT') {
+        showToast('请求超时，请稍后重试')
+      }
     }
   }
 
@@ -88,7 +112,7 @@ export default function App() {
     const selectedToolNames = ALGORITHM_TOOLS.filter((t) =>
       state.selectedToolIds.includes(t.id)
     ).map((t) => t.name)
-    const selectedModuleNames = PROMPT_MODULES.filter((m) =>
+    const selectedModuleNames = modules.filter((m) =>
       state.selectedModuleIds.includes(m.id)
     ).map((m) => m.name)
 
@@ -116,37 +140,39 @@ export default function App() {
     resultScrolled.current = false
     scrollToRef(resultRef, resultScrolled)
 
-    const excludedKeywords = ALGORITHM_TOOLS.filter((t) =>
+    const selectedTools = ALGORITHM_TOOLS.filter((t) =>
       state.selectedToolIds.includes(t.id)
-    ).flatMap((t) => t.excludeKeywords)
-
-    const selectedModuleContents = PROMPT_MODULES.filter((m) =>
-      state.selectedModuleIds.includes(m.id)
     )
-      .map((m) => m.content)
+    const excludeCapabilities = selectedTools.flatMap((t) => t.excludeCapabilities)
+    const toolBlock = selectedTools
+      .map((t) => t.usageTemplate)
+      .filter(Boolean)
       .join('\n')
 
+    const selectedModuleContents = modules.filter((m) =>
+      state.selectedModuleIds.includes(m.id)
+    )
+      .map((m) => `【模块：${m.name}】\n${m.content}`)
+      .join('\n\n')
+
+    if (toolBlock) {
+      dispatch({ type: 'APPEND_RESULT_CHUNK', payload: toolBlock + '\n\n' })
+    }
+
     try {
-      const result = await fetchGeneratedPrompt({
-        system: getGenerationSystemPrompt({ excludedKeywords, selectedModuleContents }),
+      await streamGeneratedPrompt({
+        system: getGenerationSystemPrompt({ excludeCapabilities, selectedModuleContents, toolBlock }),
         userMessage: getGenerationUserPrompt({
           generationType: state.generationType,
           requirementInput: state.requirementInput,
           templateInput: state.templateInput,
           clarificationQA,
         }),
+        onChunk: (text) => dispatch({ type: 'APPEND_RESULT_CHUNK', payload: text }),
       })
-      dispatch({ type: 'GENERATION_SUCCESS', payload: result })
-      autoSaveDraft({
-        generationType: state.generationType,
-        requirementInput: state.requirementInput,
-        templateInput: state.templateInput,
-        selectedToolIds: state.selectedToolIds,
-        selectedModuleIds: state.selectedModuleIds,
-        clarificationQA,
-        result,
-      })
+      dispatch({ type: 'GENERATION_SUCCESS', payload: '' })
     } catch (err) {
+      console.error('[generation error]', err)
       handleApiError(err)
       dispatch({ type: 'GENERATION_ERROR' })
     }
@@ -161,14 +187,48 @@ export default function App() {
     }
   }
 
+  async function handleRecommendTools() {
+    if (!state.requirementInput.trim()) {
+      showToast('请先填写本次外呼需求')
+      return
+    }
+    dispatch({ type: 'START_TOOL_RECOMMENDATION' })
+    try {
+      const ids = await fetchToolRecommendations({
+        system: getToolRecommendationSystemPrompt(),
+        userMessage: getToolRecommendationUserPrompt(
+          state.requirementInput,
+          ALGORITHM_TOOLS.map((t) => ({ id: t.id, name: t.name, description: t.description }))
+        ),
+      })
+      dispatch({ type: 'SET_RECOMMENDED_TOOL_IDS', payload: ids })
+    } catch {
+      dispatch({ type: 'RECOMMENDATION_ERROR' })
+      showToast('推荐失败，请重试')
+    }
+  }
+
+  function handleDeleteModule(id: string) {
+    if (state.selectedModuleIds.includes(id)) {
+      dispatch({ type: 'TOGGLE_MODULE', payload: id })
+    }
+    deleteModule(id)
+  }
+
   async function handleTuningSend(instruction: string) {
     dispatch({ type: 'START_TUNING' })
     try {
-      const aiResult = await fetchTunedPrompt({
+      let fullResult = ''
+      await fetchTunedPrompt({
         system: getTuningSystemPrompt(),
-        userMessage: getTuningUserPrompt(state.result, instruction),
+        userMessage: getTuningUserPrompt(state.result, instruction, state.tuningMessages.length),
+        history: state.tuningMessages,
+        onChunk: (text) => {
+          fullResult += text
+          dispatch({ type: 'APPEND_TUNING_CHUNK', payload: text })
+        },
       })
-      dispatch({ type: 'TUNING_SUCCESS', payload: { userMsg: instruction, aiResult } })
+      dispatch({ type: 'TUNING_SUCCESS', payload: { userMsg: instruction, aiResult: fullResult } })
     } catch (err) {
       handleApiError(err)
       dispatch({ type: 'TUNING_ERROR' })
@@ -220,7 +280,10 @@ export default function App() {
         </div>
       )}
 
-      <Header onOpenDrawer={() => dispatch({ type: 'SET_DRAWER_OPEN', payload: true })} />
+      <Header
+        onOpenDrawer={() => dispatch({ type: 'SET_DRAWER_OPEN', payload: true })}
+        onReset={() => dispatch({ type: 'RESET' })}
+      />
 
       <main className="w-full max-w-[1400px] mx-auto px-6 py-8 space-y-6">
         <PathSelector
@@ -238,12 +301,19 @@ export default function App() {
 
         <ToolSelector
           selectedIds={state.selectedToolIds}
+          recommendedIds={state.recommendedToolIds}
+          isRecommendationLoading={state.isRecommendationLoading}
           onToggle={(id) => dispatch({ type: 'TOGGLE_TOOL', payload: id })}
+          onRecommend={handleRecommendTools}
         />
 
         <ModuleSelector
+          modules={modules}
           selectedIds={state.selectedModuleIds}
           onToggle={(id) => dispatch({ type: 'TOGGLE_MODULE', payload: id })}
+          onAdd={addModule}
+          onUpdate={updateModule}
+          onDelete={handleDeleteModule}
         />
 
         <GenerateButton onClick={startClarification} disabled={isBusy} />
@@ -272,15 +342,18 @@ export default function App() {
               isLoading={state.isResultLoading}
               hasError={state.resultError}
               result={state.result}
+              previousResult={state.previousResult}
               originalTemplate={state.originalTemplate}
               generationType={state.generationType}
               tuningMessages={state.tuningMessages}
               isTuningLoading={state.isTuningLoading}
               tuningError={state.tuningError}
+              pendingTuningResult={state.pendingTuningResult}
               onResultChange={(v) => dispatch({ type: 'SET_RESULT', payload: v })}
               onRegenerate={handleRegenerate}
               onSaveDraft={handleSaveDraft}
               onTuningSend={handleTuningSend}
+              onTuningConfirm={() => dispatch({ type: 'TUNING_CONFIRM' })}
             />
           </div>
         )}

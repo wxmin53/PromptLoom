@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(curl *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('error', d.get\\('content',[{}]\\)[0].get\\('text',''\\)\\)[:200] if 'error' in d else 'OK: ' + d['content'][0]['text'][:100]\\)\")",
+      "Bash(node *)",
+      "WebSearch",
+      "WebFetch(domain:help.aliyun.com)",
+      "WebFetch(domain:platform.openai.com)",
+      "Bash(python3 *)",
+      "Bash(npm --version)"
+    ]
+  }
+}

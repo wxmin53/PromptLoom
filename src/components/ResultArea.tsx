@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import type { TuningMessage, GenerationType } from '../types'
 import DiffViewer from './DiffViewer'
 import TuningChat from './TuningChat'
@@ -7,15 +7,18 @@ interface ResultAreaProps {
   isLoading: boolean
   hasError: boolean
   result: string
+  previousResult: string
   originalTemplate: string
   generationType: GenerationType
   tuningMessages: TuningMessage[]
   isTuningLoading: boolean
   tuningError: boolean
+  pendingTuningResult: string
   onResultChange: (v: string) => void
   onRegenerate: () => void
   onSaveDraft: () => void
   onTuningSend: (instruction: string) => void
+  onTuningConfirm: () => void
 }
 
 function Skeleton() {
@@ -32,17 +35,19 @@ export default function ResultArea({
   isLoading,
   hasError,
   result,
+  previousResult,
   originalTemplate,
   generationType,
   tuningMessages,
   isTuningLoading,
   tuningError,
+  pendingTuningResult,
   onResultChange,
   onRegenerate,
   onSaveDraft,
   onTuningSend,
+  onTuningConfirm,
 }: ResultAreaProps) {
-  const [diffOpen, setDiffOpen] = useState(true)
   const [savedFlash, setSavedFlash] = useState(false)
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -54,6 +59,9 @@ export default function ResultArea({
   }
 
   useEffect(() => () => { if (savedTimerRef.current) clearTimeout(savedTimerRef.current) }, [])
+
+  const hasPrev = !!previousResult
+  const hasOriginal = generationType === 'template' && !!originalTemplate
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5">
@@ -105,26 +113,35 @@ export default function ResultArea({
             style={{ minHeight: 500 }}
           />
 
-          {generationType === 'template' && originalTemplate && (
-            <div className="mt-4">
-              <button
-                onClick={() => setDiffOpen((v) => !v)}
-                className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-800 mb-2"
-              >
-                <span>{diffOpen ? '▼' : '▶'}</span>
-                <span>与原始模板对比</span>
-                <span className="text-xs text-gray-400 ml-1">[{diffOpen ? '收起' : '展开'}]</span>
-              </button>
-              {diffOpen && <DiffViewer original={originalTemplate} modified={result} />}
-            </div>
-          )}
-
           <TuningChat
             messages={tuningMessages}
             isLoading={isTuningLoading}
             hasError={tuningError}
+            pendingTuningResult={pendingTuningResult}
             onSend={onTuningSend}
+            onConfirm={onTuningConfirm}
           />
+
+          {hasPrev && (
+            <DiffViewer
+              original={previousResult}
+              modified={result}
+              leftLabel="上一版本（只读）"
+              title="与上一版本对比"
+              defaultOpen={true}
+              copyContent={previousResult}
+            />
+          )}
+
+          {hasOriginal && (
+            <DiffViewer
+              original={originalTemplate}
+              modified={result}
+              leftLabel="原始模板（只读）"
+              title="与原始模板对比"
+              defaultOpen={!hasPrev}
+            />
+          )}
         </>
       )}
     </div>

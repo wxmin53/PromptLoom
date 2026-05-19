@@ -5,7 +5,9 @@ export interface AlgorithmTool {
   name: string
   description: string
   fullDescription: string
-  excludeKeywords: string[]
+  category: string
+  usageTemplate: string
+  excludeCapabilities: string[]
 }
 
 export interface PromptModule {
@@ -62,11 +64,15 @@ export interface AppState {
   isResultLoading: boolean
   resultError: boolean
   result: string
+  previousResult: string
 
   tuningMessages: TuningMessage[]
   isTuningLoading: boolean
   tuningError: boolean
+  pendingTuningResult: string
 
   isDrawerOpen: boolean
   inputSnapshot: InputSnapshot | null
+  recommendedToolIds: string[]
+  isRecommendationLoading: boolean
 }

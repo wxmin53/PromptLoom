@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ALGORITHM_TOOLS } from '../constants/tools'
+import { ALGORITHM_TOOLS, TOOL_CATEGORIES } from '../constants/tools'
 
 interface ToolDetailModalProps {
   onClose: () => void
@@ -12,8 +12,14 @@ export default function ToolDetailModal({ onClose }: ToolDetailModalProps) {
     (t) =>
       search === '' ||
       t.name.includes(search) ||
-      t.fullDescription.includes(search)
+      t.fullDescription.includes(search) ||
+      t.category.includes(search)
   )
+
+  const groupedFiltered = TOOL_CATEGORIES.map((cat) => ({
+    category: cat,
+    tools: filtered.filter((t) => t.category === cat),
+  })).filter((g) => g.tools.length > 0)
 
   return (
     <div
@@ -36,21 +42,35 @@ export default function ToolDetailModal({ onClose }: ToolDetailModalProps) {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索工具名称或说明…"
+            placeholder="搜索工具名称、说明或分类…"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
         <div className="overflow-y-auto px-5 pb-4">
-          {filtered.length === 0 ? (
+          {groupedFiltered.length === 0 ? (
             <p className="text-sm text-gray-400 py-6 text-center">未找到匹配工具</p>
           ) : (
-            <div className="space-y-4 pt-2">
-              {filtered.map((tool, i) => (
-                <div key={tool.id}>
-                  {i > 0 && <div className="border-t border-gray-100 mb-4" />}
-                  <div className="font-medium text-gray-900 mb-1">{tool.name}</div>
-                  <p className="text-sm text-gray-600 leading-relaxed">{tool.fullDescription}</p>
+            <div className="space-y-5 pt-2">
+              {groupedFiltered.map(({ category, tools }) => (
+                <div key={category}>
+                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                    {category}
+                  </div>
+                  <div className="space-y-4">
+                    {tools.map((tool, i) => (
+                      <div key={tool.id}>
+                        {i > 0 && <div className="border-t border-gray-100 mb-4" />}
+                        <div className="font-medium text-gray-900 mb-1">{tool.name}</div>
+                        <p className="text-sm text-gray-600 leading-relaxed">{tool.fullDescription}</p>
+                        {tool.usageTemplate && (
+                          <pre className="mt-2 text-xs bg-gray-50 border border-gray-200 rounded px-3 py-2 text-gray-700 whitespace-pre-wrap font-mono">
+                            {tool.usageTemplate}
+                          </pre>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

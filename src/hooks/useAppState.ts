@@ -20,13 +20,17 @@ const initialState: AppState = {
   isResultLoading: false,
   resultError: false,
   result: '',
+  previousResult: '',
 
   tuningMessages: [],
   isTuningLoading: false,
   tuningError: false,
+  pendingTuningResult: '',
 
   isDrawerOpen: false,
   inputSnapshot: null,
+  recommendedToolIds: [],
+  isRecommendationLoading: false,
 }
 
 type Action =
@@ -44,13 +48,20 @@ type Action =
   | { type: 'GENERATION_ERROR' }
   | { type: 'SET_RESULT'; payload: string }
   | { type: 'START_TUNING' }
+  | { type: 'APPEND_TUNING_CHUNK'; payload: string }
   | { type: 'TUNING_SUCCESS'; payload: { userMsg: string; aiResult: string } }
+  | { type: 'TUNING_CONFIRM' }
   | { type: 'TUNING_ERROR' }
   | { type: 'CLEAR_TUNING_ERROR' }
   | { type: 'SET_DRAWER_OPEN'; payload: boolean }
   | { type: 'RESTORE_DRAFT'; payload: Partial<AppState> }
   | { type: 'SAVE_INPUT_SNAPSHOT' }
   | { type: 'RESET_CLARIFICATION_FOR_REGENERATE' }
+  | { type: 'START_TOOL_RECOMMENDATION' }
+  | { type: 'SET_RECOMMENDED_TOOL_IDS'; payload: string[] }
+  | { type: 'RECOMMENDATION_ERROR' }
+  | { type: 'APPEND_RESULT_CHUNK'; payload: string }
+  | { type: 'RESET' }
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -100,6 +111,8 @@ function reducer(state: AppState, action: Action): AppState {
     case 'START_GENERATION':
       return {
         ...state,
+        result: '',
+        previousResult: state.result,
         showResult: true,
         isResultLoading: true,
         resultError: false,
@@ -110,7 +123,7 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         isResultLoading: false,
-        result: action.payload,
+        result: action.payload || state.result,
         originalTemplate: state.templateInput,
       }
     case 'GENERATION_ERROR':
@@ -118,17 +131,21 @@ function reducer(state: AppState, action: Action): AppState {
     case 'SET_RESULT':
       return { ...state, result: action.payload }
     case 'START_TUNING':
-      return { ...state, isTuningLoading: true, tuningError: false }
+      return { ...state, previousResult: state.result, isTuningLoading: true, tuningError: false, pendingTuningResult: '' }
+    case 'APPEND_TUNING_CHUNK':
+      return { ...state, pendingTuningResult: state.pendingTuningResult + action.payload }
     case 'TUNING_SUCCESS': {
       const userMsg: TuningMessage = { role: 'user', content: action.payload.userMsg }
       const aiMsg: TuningMessage = { role: 'assistant', content: action.payload.aiResult }
       return {
         ...state,
         isTuningLoading: false,
-        result: action.payload.aiResult,
+        pendingTuningResult: action.payload.aiResult,
         tuningMessages: [...state.tuningMessages, userMsg, aiMsg],
       }
     }
+    case 'TUNING_CONFIRM':
+      return { ...state, result: state.pendingTuningResult, pendingTuningResult: '' }
     case 'TUNING_ERROR':
       return { ...state, isTuningLoading: false, tuningError: true }
     case 'CLEAR_TUNING_ERROR':
@@ -153,6 +170,16 @@ function reducer(state: AppState, action: Action): AppState {
         clarificationAnswers: [],
         clarificationError: false,
       }
+    case 'START_TOOL_RECOMMENDATION':
+      return { ...state, isRecommendationLoading: true, recommendedToolIds: [] }
+    case 'SET_RECOMMENDED_TOOL_IDS':
+      return { ...state, isRecommendationLoading: false, recommendedToolIds: action.payload }
+    case 'RECOMMENDATION_ERROR':
+      return { ...state, isRecommendationLoading: false }
+    case 'APPEND_RESULT_CHUNK':
+      return { ...state, result: state.result + action.payload }
+    case 'RESET':
+      return { ...initialState, generationType: state.generationType }
     default:
       return state
   }
