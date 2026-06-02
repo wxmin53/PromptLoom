@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import type { Draft } from './types'
 import { useAppState } from './hooks/useAppState'
 import { useModules } from './hooks/useModules'
+import { useChatState } from './hooks/useChatState'
 import { autoSaveDraft, manualSaveDraft } from './hooks/useDrafts'
 import {
   fetchClarificationQuestions,
@@ -30,6 +31,7 @@ import GenerateButton from './components/GenerateButton'
 import ClarificationArea from './components/ClarificationArea'
 import ResultArea from './components/ResultArea'
 import DraftDrawer from './components/DraftDrawer'
+import ChatPage from './components/ChatPage'
 
 function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
@@ -45,6 +47,9 @@ function Toast({ message, onDismiss }: { message: string; onDismiss: () => void 
 export default function App() {
   const { state, dispatch, inputsChangedSinceLastGeneration, getClarificationQA } = useAppState()
   const { modules, addModule, updateModule, deleteModule } = useModules()
+  const { state: chatState, dispatch: chatDispatch, sendMessage, stopGeneration } = useChatState()
+
+  const [activeTab, setActiveTab] = useState<'prompt' | 'chat'>('prompt')
 
   const clarificationRef = useRef<HTMLDivElement>(null)
   const resultRef = useRef<HTMLDivElement>(null)
@@ -281,11 +286,23 @@ export default function App() {
       )}
 
       <Header
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
         onOpenDrawer={() => dispatch({ type: 'SET_DRAWER_OPEN', payload: true })}
         onReset={() => dispatch({ type: 'RESET' })}
+        onClearChat={() => chatDispatch({ type: 'CLEAR_ALL' })}
       />
 
-      <main className="w-full max-w-[1400px] mx-auto px-6 py-8 space-y-6">
+      {activeTab === 'chat' ? (
+        <ChatPage
+          state={chatState}
+          onSend={sendMessage}
+          onStop={stopGeneration}
+          onAddAttachment={(att) => chatDispatch({ type: 'ADD_ATTACHMENT', payload: att })}
+          onRemoveAttachment={(i) => chatDispatch({ type: 'REMOVE_ATTACHMENT', payload: i })}
+        />
+      ) : (
+        <main className="w-full max-w-[1400px] mx-auto px-6 py-8 space-y-6">
         <PathSelector
           value={state.generationType}
           onChange={(v) => dispatch({ type: 'SET_GENERATION_TYPE', payload: v })}
@@ -358,6 +375,7 @@ export default function App() {
           </div>
         )}
       </main>
+      )}
 
       {state.isDrawerOpen && (
         <DraftDrawer

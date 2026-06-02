@@ -45,6 +45,31 @@ export interface InputSnapshot {
   selectedModuleIds: string[]
 }
 
+export interface ChatFileAttachment {
+  name: string
+  type: 'text' | 'image'
+  mimeType: string
+  content: string
+  size: number
+}
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  attachments?: ChatFileAttachment[]
+  isStreaming?: boolean
+  hasError?: boolean
+  excelMode?: boolean
+}
+
+export interface ChatState {
+  messages: ChatMessage[]
+  isLoading: boolean
+  error: string | null
+  pendingAttachments: ChatFileAttachment[]
+}
+
 export interface AppState {
   generationType: GenerationType
   requirementInput: string

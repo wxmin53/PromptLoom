@@ -58,6 +58,7 @@ npm run build
 | 函数 | 端点 | max_tokens | 用途 |
 |---|---|---|---|
 | `fetchClarificationQuestions` | `/api/messages` | 512 | 生成追问，返回 JSON `{questions: [...]}` |
+| `fetchGeneratedPrompt` | `/api/messages` | 1500 | 非流式生成提示词（备用，当前 App 未调用） |
 | `streamGeneratedPrompt` | `/api/messages/stream` | 16384 | 流式生成提示词，callback 逐 chunk 回调 |
 | `fetchTunedPrompt` | `/api/messages/stream` | 16384 | 流式微调，携带最近 6 条 `history: TuningMessage[]` |
 | `fetchToolRecommendations` | `/api/messages` | 256 | 智能推荐工具，返回 id 数组 |
@@ -72,7 +73,7 @@ npm run build
 
 ### 追问与模板预处理
 
-`src/constants/prompts.ts` 中的 `stripToolCommands()` 会在把 `templateInput` 传给 Claude 之前，剥离模板顶部连续的 `# ` 开头行（算法工具命令），避免与新选工具的 `usageTemplate` 重复。
+`src/constants/prompts.ts` 中的 `stripToolCommands()` 会在把 `templateInput` 传给 Claude 之前，剥离模板顶部连续的 `#` 开头行或空行（算法工具命令），避免与新选工具的 `usageTemplate` 重复。
 
 ## 算法工具
 

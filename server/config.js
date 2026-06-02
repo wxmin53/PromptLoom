@@ -1,8 +1,11 @@
 module.exports = {
-  // ─── 切换模型：只需改这一行 ───────────────────────────────────────────────
+  // ─── 切换模型：按功能分别配置 ────────────────────────────────────────────
   // Claude 系列：'claude-sonnet-4-6' | 'claude-opus-4-7'
   // Qwen 系列：  'qwen-max' | 'qwen-plus' | 'qwen3-235b-a22b'
-  model: 'claude-sonnet-4-6',
+  models: {
+    prompt: 'claude-sonnet-4-6',  // 提示词生成 Tab
+    chat: 'claude-sonnet-4-6',    // AI 对话 Tab（可独立切换）
+  },
   // ──────────────────────────────────────────────────────────────────────────
 
   providers: {

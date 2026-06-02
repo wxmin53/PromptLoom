@@ -90,7 +90,7 @@ module.exports = {
 ### 第一步：获取代码
 
 ```bash
-git clone <仓库地址> /opt/promptloom
+git clone git@github.com:wxmin53/PromptLoom.git /opt/promptloom
 cd /opt/promptloom
 ```
 

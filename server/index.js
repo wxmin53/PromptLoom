@@ -10,8 +10,8 @@ app.use(express.json({ limit: '10mb' }))
 
 const API_KEY = process.env.ANTHROPIC_API_KEY
 
-function getProviderConfig() {
-  const modelId = config.model
+function getProviderConfig(feature = 'prompt') {
+  const modelId = config.models[feature] ?? config.models.prompt
   const providerConfig = config.providers[modelId]
   if (!providerConfig) throw new Error(`Unknown model: ${modelId}`)
   const apiKey = process.env[providerConfig.apiKeyEnv]
@@ -19,23 +19,26 @@ function getProviderConfig() {
 }
 
 function buildRequestBody(body, stream = false) {
-  const { modelId, provider } = getProviderConfig()
+  const { feature, model: _ignoredModel, ...rest } = body  // strip feature and client-supplied model
+  const { modelId, provider } = getProviderConfig(feature)
 
   if (provider === 'anthropic') {
-    return stream ? { ...body, stream: true } : { ...body }
+    return stream
+      ? { ...rest, model: modelId, stream: true }
+      : { ...rest, model: modelId }
   }
 
   // OpenAI 兼容格式：system 字段转为 messages 首条
-  const { system, messages, max_tokens, ...rest } = body
+  const { system, messages, max_tokens, ...remaining } = rest
   const openaiMessages = system
     ? [{ role: 'system', content: system }, ...messages]
     : messages
-  const openaiBody = { ...rest, model: modelId, messages: openaiMessages, max_tokens }
+  const openaiBody = { ...remaining, model: modelId, messages: openaiMessages, max_tokens }
   return stream ? { ...openaiBody, stream: true } : openaiBody
 }
 
-function buildHeaders(bodyStr) {
-  const { provider, apiKey } = getProviderConfig()
+function buildHeaders(bodyStr, feature = 'prompt') {
+  const { provider, apiKey } = getProviderConfig(feature)
   const headers = {
     'Content-Type': 'application/json',
     'Content-Length': Buffer.byteLength(bodyStr),
@@ -49,8 +52,8 @@ function buildHeaders(bodyStr) {
   return headers
 }
 
-function parseNonStreamResponse(data) {
-  const { provider } = getProviderConfig()
+function parseNonStreamResponse(data, feature = 'prompt') {
+  const { provider } = getProviderConfig(feature)
   if (provider === 'anthropic') {
     return data.content?.[0]?.text ?? ''
   }
@@ -58,14 +61,15 @@ function parseNonStreamResponse(data) {
 }
 
 app.post('/api/messages', (req, res) => {
-  const { apiKey } = getProviderConfig()
+  const feature = req.body.feature || 'prompt'
+  const { apiKey } = getProviderConfig(feature)
   if (!apiKey) {
     return res.status(500).json({ error: 'API_KEY not configured' })
   }
 
-  const { hostname, path } = getProviderConfig()
+  const { hostname, path } = getProviderConfig(feature)
   const bodyStr = JSON.stringify(buildRequestBody(req.body))
-  const headers = buildHeaders(bodyStr)
+  const headers = buildHeaders(bodyStr, feature)
 
   const options = { hostname, path, method: 'POST', timeout: 90000, headers }
 
@@ -77,12 +81,11 @@ app.post('/api/messages', (req, res) => {
     proxyRes.on('end', () => {
       try {
         const parsed = JSON.parse(rawData)
-        const { provider } = getProviderConfig()
+        const { provider } = getProviderConfig(feature)
         if (provider === 'anthropic') {
           res.end(rawData)
         } else {
-          // 将 OpenAI 格式转换为前端期望的 Anthropic 格式
-          const text = parseNonStreamResponse(parsed)
+          const text = parseNonStreamResponse(parsed, feature)
           res.end(JSON.stringify({ content: [{ type: 'text', text }] }))
         }
       } catch {
@@ -109,14 +112,15 @@ app.post('/api/messages', (req, res) => {
 })
 
 app.post('/api/messages/stream', (req, res) => {
-  const { apiKey } = getProviderConfig()
+  const feature = req.body.feature || 'prompt'
+  const { apiKey } = getProviderConfig(feature)
   if (!apiKey) {
     return res.status(500).json({ error: 'API_KEY not configured' })
   }
 
-  const { hostname, path } = getProviderConfig()
+  const { hostname, path } = getProviderConfig(feature)
   const bodyStr = JSON.stringify(buildRequestBody(req.body, true))
-  const headers = buildHeaders(bodyStr)
+  const headers = buildHeaders(bodyStr, feature)
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -140,5 +144,5 @@ app.post('/api/messages/stream', (req, res) => {
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`Proxy server running on http://localhost:${PORT}`)
-  console.log(`Using model: ${config.model} (${getProviderConfig().provider})`)
+  console.log(`Models — prompt: ${config.models.prompt}, chat: ${config.models.chat}`)
 })
